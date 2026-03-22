@@ -1,0 +1,187 @@
+{
+  "name": "Daily Follow-up Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 10
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a325bc36-c287-4e97-8cb0-1d696323a1d3",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs",
+          "mode": "list",
+          "cachedResultName": "Job Application Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        176,
+        0
+      ],
+      "id": "3d0945ff-ec3a-4d1b-86da-04daa45cbc81",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "aUdh2ZhG9nhhBDbd",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(r => r.json);\nconst today = new Date().toISOString().split(\"T\")[0];\n\nconst due = rows.filter(r =>\n  r.followUpDate <= today &&\n  r.status === \"Applied\"\n);\n\nif (due.length === 0) return [];\n\nconst lines = due.map(r => `• ${r.company} - ${r.role} (applied ${r.dateApplied})`).join(\"\\n\");\n\nconst message = `⏰ Follow-up Reminder\n\n${due.length} application(s) need attention:\n\n${lines}\n\nLog in and follow up today!`;\n\nreturn [{ json: { message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        0
+      ],
+      "id": "52b9b0c3-8e30-4e5d-b980-08ab2cabc645",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "89b0b1f5-9ba9-4b94-a0b7-45cdc7f6272c",
+              "leftValue": "={{ $json.message }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        560,
+        0
+      ],
+      "id": "2cd86e5f-b938-4ee8-9476-8c34857e3606",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "chatId": "744414502",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        768,
+        -96
+      ],
+      "id": "d70e7e5d-3c85-4a37-a506-25cbd18d03f3",
+      "name": "Send a text message",
+      "webhookId": "f53c36f3-096b-422b-8980-76984ad0ffaf",
+      "credentials": {
+        "telegramApi": {
+          "id": "OP638imnTgNRIf9A",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "1534b01c-a0b5-418e-8fcf-4a8024bf3bdd",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f683d91751cf73ae2785efe9d3731de3fbac5d81aacee06e3d4e1788f06efad5"
+  },
+  "id": "DsMKdZb2n63WUivH",
+  "tags": []
+}

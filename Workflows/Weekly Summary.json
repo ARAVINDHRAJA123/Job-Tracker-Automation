@@ -1,0 +1,144 @@
+{
+  "name": "Weekly Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        0
+      ],
+      "id": "28ad240c-015f-44a3-b1b0-d25721aa2a09",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs",
+          "mode": "list",
+          "cachedResultName": "Job Application Tracker",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit#gid=0"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        208,
+        0
+      ],
+      "id": "ff13f9fc-1d77-423e-85be-094b1d41edc6",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "aUdh2ZhG9nhhBDbd",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(r => r.json);\n\nconst today = new Date();\nconst weekAgo = new Date(today - 7 * 24 * 60 * 60 * 1000).toISOString().split(\"T\")[0];\n\nconst recent = rows.filter(r => r.lastUpdated >= weekAgo);\n\nconst counts = {\n  \"Applied\": 0,\n  \"Interview Scheduled\": 0,\n  \"Offer Received\": 0,\n  \"Rejected\": 0,\n  \"Recruiter Outreach\": 0\n};\n\nrecent.forEach(r => {\n  if (counts[r.status] !== undefined) counts[r.status]++;\n});\n\nconst total = rows.length;\nconst totalInterviews = rows.filter(r => r.status === \"Interview Scheduled\").length;\nconst totalOffers = rows.filter(r => r.status === \"Offer Received\").length;\nconst totalApplied = rows.filter(r => r.status === \"Applied\").length;\nconst convRate = totalApplied > 0 ? ((totalInterviews / totalApplied) * 100).toFixed(1) : \"0\";\n\nconst message = `📊 Weekly Job Tracker Summary\n\nThis week:\n📨 Applied: ${counts[\"Applied\"]}\n📅 Interviews: ${counts[\"Interview Scheduled\"]}\n🎉 Offers: ${counts[\"Offer Received\"]}\n❌ Rejections: ${counts[\"Rejected\"]}\n🔔 Outreach: ${counts[\"Recruiter Outreach\"]}\n\nAll time:\nTotal tracked: ${total}\nConversion rate (apply to interview): ${convRate}%\nTotal offers received: ${totalOffers}`;\n\nreturn [{ json: { message } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "id": "a5b613bc-f1d8-40dc-b896-99dbbccf0dd9",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "chatId": "744414502",
+        "text": "={{ $json.message }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        608,
+        0
+      ],
+      "id": "644e19c0-6d4f-46c8-a112-c68d6c0b2407",
+      "name": "Send a text message",
+      "webhookId": "3fc14619-281b-458b-ae78-63d3675d7047",
+      "credentials": {
+        "telegramApi": {
+          "id": "OP638imnTgNRIf9A",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "acdae93d-dbc4-43f7-98f5-1f056d6691c8",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f683d91751cf73ae2785efe9d3731de3fbac5d81aacee06e3d4e1788f06efad5"
+  },
+  "id": "HGgmrD82vvipF5jJ",
+  "tags": []
+}

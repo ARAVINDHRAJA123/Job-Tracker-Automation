@@ -1,0 +1,253 @@
+{
+  "name": "Email → Google Sheets",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {
+          "forceReconnect": 5,
+          "trackLastMessageId": true
+        }
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b37d73bf-f74a-4115-86b7-e85436f0af9a",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "obNhOR5IDCtCUyHD",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const email = $input.first().json;\n\nlet from = email.from || \"\";\nlet subject = email.subject || \"\";\nlet bodyText = email.textPlain || email.textHtml || \"\";\n\n// Handle forwarded emails\nconst fwdMatch = bodyText.match(/---------- Forwarded message ---------([\\s\\S]*)/i);\nif (fwdMatch) {\n  bodyText = fwdMatch[1];\n  const fwdFrom = bodyText.match(/From:\\s*(.+)/i);\n  const fwdSubject = bodyText.match(/Subject:\\s*(.+)/i);\n  if (fwdFrom) from = fwdFrom[1].trim();\n  if (fwdSubject) subject = fwdSubject[1].trim();\n}\n\nconst body = bodyText.toLowerCase();\n\nfunction extractCompany(from, bodyText) {\n  const displayPatterns = [\n    [/^\"?(.+?),?\\s+Inc\\.?\\s*@\\s*icims/i, 1],\n    [/^\"?(.+?)\\s*@\\s*icims/i, 1],\n    [/^\"?(.+?)\\s+recruiting/i, 1],\n    [/^\"?(.+?)\\s+talent/i, 1],\n  ];\n  for (const [re, g] of displayPatterns) {\n    const m = from.match(re);\n    if (m) return m[g].replace(/,?\\s*Inc\\.?/i, \"\").trim();\n  }\n\n  const bodyPatterns = [\n    /join us at ([A-Z][a-zA-Z]+)/,\n    /interest in ([A-Z][a-zA-Z]+)/,\n    /application (?:to|at|with) ([A-Z][a-zA-Z]+)/,\n    /team at ([A-Z][a-zA-Z]+)/,\n    /at ([A-Z][a-zA-Z]+),? we/,\n  ];\n  for (const re of bodyPatterns) {\n    const m = bodyText.match(re);\n    if (m) return m[1].trim();\n  }\n\n  const emailMatch = from.match(/<(.+?)>/) || from.match(/([^\\s]+@[^\\s]+)/);\n  if (emailMatch) {\n    const addr = emailMatch[1].toLowerCase();\n    const username = addr.split(\"@\")[0];\n    const domain = addr.split(\"@\")[1];\n\n    const usernameMap = {\n      \"accenture\": \"Accenture\",\n      \"talentattractionandacquisition\": \"EY\",\n    };\n    if (usernameMap[username]) return usernameMap[username];\n\n    const domainMap = {\n      \"ey.com\": \"EY\",\n      \"microsoft.com\": \"Microsoft\",\n      \"abrdn.com\": \"Aberdeen\",\n      \"nokia.com\": \"Nokia\",\n      \"arm.com\": \"Arm\",\n      \"github.com\": \"GitHub\",\n      \"accenture.com\": \"Accenture\",\n      \"amazon.com\": \"Amazon\",\n      \"google.com\": \"Google\",\n      \"meta.com\": \"Meta\",\n      \"apple.com\": \"Apple\",\n    };\n    const rootDomain = domain.split(\".\").slice(-2).join(\".\");\n    if (domainMap[rootDomain]) return domainMap[rootDomain];\n\n    const name = rootDomain.split(\".\")[0];\n    return name.charAt(0).toUpperCase() + name.slice(1);\n  }\n\n  return \"Unknown\";\n}\n\nfunction extractPlatform(from, body) {\n  const checks = [\n    [\"myworkday.com\", \"Workday\"],\n    [\"icims\", \"iCIMS\"],\n    [\"linkedin.com\", \"LinkedIn\"],\n    [\"naukri.com\", \"Naukri\"],\n    [\"greenhouse.io\", \"Greenhouse\"],\n    [\"lever.co\", \"Lever\"],\n    [\"smartrecruiters.com\", \"SmartRecruiters\"],\n    [\"workable.com\", \"Workable\"],\n  ];\n  const combined = (from + \" \" + body).toLowerCase();\n  for (const [kw, label] of checks) {\n    if (combined.includes(kw)) return label;\n  }\n  return \"Direct\";\n}\n\nfunction extractStatus(subject, body) {\n  const text = (subject + \" \" + body).toLowerCase();\n\n  if (/aced it|love you to join|pleased to offer|offer of employment|extend.*offer|formal offer/.test(text))\n    return \"Offer Received\";\n  if (/move forward|invite you to an interview|finalized your interview|impressed with your application|schedule.*interview|next.*round|technical.*interview|hiring.*manager/.test(text))\n    return \"Interview Scheduled\";\n  if (/regret|not moving forward|pursued other candidates|unfortunately|not been selected|unable to.*offer|other candidates/.test(text))\n    return \"Rejected\";\n  if (/received your application|successfully submitted|thank you for applying|application.*received|we.*received.*your|confirmed.*application/.test(text))\n    return \"Applied\";\n  if (/came across your profile|open to opportunities|exciting opportunity|reach out.*role|would you be interested/.test(text))\n    return \"Recruiter Outreach\";\n\n  return null;\n}\n\nfunction extractRole(subject, bodyText) {\n  const combined = subject + \" \" + bodyText;\n  const patterns = [\n    /(?:position|role|job)[:\\s]+([^,\\n.]{5,60})/i,\n    /applying for[:\\s]+([^,\\n.]{5,60})/i,\n    /application for[:\\s]+([^,\\n.]{5,60})/i,\n    /for the ([^,\\n.]{5,60}) (?:position|role)/i,\n    /re:\\s+([^,\\n.]{5,60})/i,\n  ];\n  for (const re of patterns) {\n    const m = combined.match(re);\n    if (m) return m[1].trim();\n  }\n  return \"Unknown\";\n}\n\nconst status = extractStatus(subject, body);\nif (!status) return [];\n\nconst company = extractCompany(from, bodyText);\nconst role = extractRole(subject, bodyText);\nconst platform = extractPlatform(from, body);\nconst today = new Date().toISOString().split(\"T\")[0];\nconst followUpDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split(\"T\")[0];\nconst jobKey = `${company}|${role}`;\n\nreturn [{\n  json: {\n    dateApplied: today,\n    company,\n    role,\n    platform,\n    status,\n    lastUpdated: today,\n    followUpDate,\n    priority: \"Normal\",\n    jobKey,\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "6830a332-0dc1-4c44-af55-27f244743aeb",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit?gid=0#gid=0",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/133bSJ-DOYvIXk5C0VycWFKJMc2AbEGlcuhdQ2vIhKJs/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "dateApplied": "={{ $json.dateApplied }}",
+            "company": "={{ $json.company }}",
+            "role": "={{ $json.role }}",
+            "platform": "={{ $json.platform }}",
+            "status": "={{ $json.status }}",
+            "lastUpdated": "={{ $json.lastUpdated }}",
+            "followUpDate": "={{ $json.followUpDate }}",
+            "priority": "={{ $json.priority }}",
+            "jobKey": "={{ $json.jobKey }}"
+          },
+          "matchingColumns": [
+            "jobKey"
+          ],
+          "schema": [
+            {
+              "id": "dateApplied",
+              "displayName": "dateApplied",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "role",
+              "displayName": "role",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "platform",
+              "displayName": "platform",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lastUpdated",
+              "displayName": "lastUpdated",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "followUpDate",
+              "displayName": "followUpDate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "priority",
+              "displayName": "priority",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "jobKey",
+              "displayName": "jobKey",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        416,
+        0
+      ],
+      "id": "e041edd8-3fd7-46db-9035-0882a5f16629",
+      "name": "Append or update row in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "aUdh2ZhG9nhhBDbd",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "744414502",
+        "text": "={{ $json.status === \"Offer Received\" ? \"🎉\" : $json.status === \"Interview Scheduled\" ? \"📅\" : $json.status === \"Rejected\" ? \"❌\" : $json.status === \"Applied\" ? \"📨\" : \"🔔\" }} {{ $json.company }} - {{ $json.role }}\n\nStatus: {{ $json.status }}\nPlatform: {{ $json.platform }}\nDate: {{ $json.dateApplied }}\nFollow up by: {{ $json.followUpDate }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "678c2707-1506-4fec-b325-1c487514e44f",
+      "name": "Send a text message",
+      "webhookId": "57f97d2e-602c-4f6e-b6b5-47a5f031379c",
+      "credentials": {
+        "telegramApi": {
+          "id": "OP638imnTgNRIf9A",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Append or update row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append or update row in sheet": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "c212e39b-3fd0-4896-90e0-68ce7b796a81",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f683d91751cf73ae2785efe9d3731de3fbac5d81aacee06e3d4e1788f06efad5"
+  },
+  "id": "3vktrAWeHxLTyXGC",
+  "tags": []
+}
